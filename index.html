@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#121212">
+<title>2026年排班日历</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="排班日历">
+<script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js');
+      });
+    }
+</script>
+<style>
+:root {
+  --bg-color: #121212;
+  --card-bg: #1e1e1e;
+  --text-sub: #888;
+  --primary: #4a90e2;
+  /* 搜索高亮主色：赛博紫红 */
+  --search-color: #D946EF; 
+  --search-color-dark: #8B5CF6;
+  /* 今天高亮主色：霓虹青色 */
+  --today-color: #00E5FF;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg-color); color: #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: 50px;
+}
+body.modal-open { overflow: hidden; }
+
+/* 顶部区域 */
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px; background: var(--card-bg);
+  position: sticky; top: 0; z-index: 100;
+  border-bottom: 1px solid #333;
+  flex-wrap: wrap; gap: 10px;
+}
+.header h1 { font-size: 17px; color: var(--primary); flex: 1; min-width: 120px; }
+.header-right { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; }
+
+/* 搜索框 */
+.search-box {
+  display: flex; align-items: center; background: #2a2a2a;
+  border-radius: 20px; padding: 4px 10px; flex: 1; max-width: 160px;
+  border: 1px solid #333; transition: border-color 0.2s;
+}
+.search-box:focus-within { border-color: var(--primary); }
+.search-box input {
+  background: transparent; border: none; color: #fff; outline: none;
+  font-size: 13px; width: 100%; padding: 4px 0;
+}
+.search-box input::placeholder { color: #666; font-size: 12px; }
+.search-btn {
+  background: var(--primary); color: #fff; border: none;
+  padding: 5px 10px; border-radius: 12px; font-size: 12px;
+  cursor: pointer; white-space: nowrap;
+}
+.back-btn {
+  background: var(--primary); color: #fff; padding: 6px 12px;
+  border-radius: 20px; font-size: 12px; border: none; cursor: pointer;
+  display: none; white-space: nowrap;
+}
+
+/* 图例 */
+.legend {
+  display: flex; gap: 15px; padding: 12px 20px 4px;
+  font-size: 12px; color: var(--text-sub);
+  position: sticky; top: 55px; z-index: 90;
+  background: var(--bg-color); transition: top 0.3s; flex-wrap: wrap;
+}
+.legend span { display: flex; align-items: center; gap: 5px; transition: all 0.3s; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend .bai { background: #fff; }
+.legend .ye { background: #1a1a1a; border: 1px solid #444; }
+.legend .xiu { background: #facc15; }
+.legend .today { background: var(--today-color); }
+
+/* 图例高亮 */
+.legend span.legend-highlight {
+  color: #fff !important;
+  transform: scale(1.15);
+  font-weight: bold;
+  background: linear-gradient(135deg, var(--search-color), var(--search-color-dark));
+  border-radius: 8px;
+  padding: 2px 8px;
+  border: none;
+  box-shadow: 0 0 12px rgba(217, 70, 239, 0.6);
+}
+.legend span.legend-highlight i { background: #fff !important; border: none; }
+
+/* 月份 */
+.month-wrapper { margin-top: 14px; }
+.month-title {
+  font-size: 16px; color: #fff; padding: 0 15px 10px;
+  border-left: 3px solid var(--primary); margin-left: 15px;
+  position: sticky; top: 84px; z-index: 50;
+  background: var(--bg-color); line-height: 24px;
+}
+.month-title::before {
+  content: ""; position: absolute; left: -15px; top: 0; bottom: 0;
+  width: 15px; background: var(--bg-color);
+}
+
+/* 网格 */
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 0 8px 20px; }
+.weekday { text-align: center; color: var(--text-sub); padding: 8px 0; font-size: 12px; }
+.day-cell {
+  border-radius: 12px; min-height: clamp(64px, 18vw, 80px);
+  padding: 4px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  cursor: pointer; transition: transform 0.2s ease, box-shadow 0.3s; position: relative;
+  background-clip: padding-box;
+}
+.day-cell.empty { background: transparent; cursor: default; min-height: 0; }
+.day-cell:not(.empty):active { transform: scale(0.95); }
+.day-cell .num { font-size: clamp(16px, 4.5vw, 19px); font-weight: bold; margin-bottom: 3px; }
+.day-cell .lunar { font-size: 11px; margin-bottom: 2px; opacity: 0.85; text-align: center; line-height: 1.2; }
+.day-cell .shift-word { font-size: 12px; font-weight: bold; margin-top: 3px; padding: 1px 6px; border-radius: 4px; }
+
+/* 白班 */
+.cell-bai { background: #fff; color: #333; }
+.cell-bai .lunar { color: #666; }
+.cell-bai .shift-word { background: rgba(0,0,0,0.05); color: #333; }
+/* 夜班 */
+.cell-ye { background: #1a1a1a; color: #e0e0e0; border: 1px solid #333; }
+.cell-ye .lunar { color: #999; }
+.cell-ye .shift-word { background: rgba(255,255,255,0.1); color: #fff; }
+/* 休息 */
+.cell-xiu { background: #facc15; color: #333; }
+.cell-xiu .lunar { color: #555; }
+.cell-xiu .shift-word { background: rgba(0,0,0,0.05); color: #333; }
+
+/* ======= 今天的高亮设计 ======= */
+/* 青色呼吸灯边框 */
+@keyframes todayGlow {
+  0% { box-shadow: 0 0 4px rgba(0, 229, 255, 0.5); }
+  50% { box-shadow: 0 0 15px 4px rgba(0, 229, 255, 0.9); }
+  100% { box-shadow: 0 0 4px rgba(0, 229, 255, 0.5); }
+}
+.day-cell.is-today {
+  border: 2px solid var(--today-color) !important;
+  animation: todayGlow 2s infinite ease-in-out;
+  z-index: 10;
+}
+
+/* 悬浮右上角、不遮挡内容的“今天”红标 */
+.today-badge {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  background: #FF3B30;
+  color: #FFF;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 1px 5px;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.6);
+  z-index: 15;
+  pointer-events: none;
+  letter-spacing: 0.5px;
+}
+
+/* ======= 搜索高亮：赛博朋克渐变 ======= */
+@keyframes searchPulseCyber {
+  0% { transform: scale(1); box-shadow: 0 0 10px 2px rgba(217, 70, 239, 0.6); }
+  50% { transform: scale(1.12); box-shadow: 0 0 25px 8px rgba(217, 70, 239, 1); }
+  100% { transform: scale(1); box-shadow: 0 0 10px 2px rgba(217, 70, 239, 0.6); }
+}
+.day-cell.search-highlight {
+  animation: searchPulseCyber 1.2s infinite ease-in-out;
+  z-index: 100 !important;
+  background: linear-gradient(135deg, var(--search-color), var(--search-color-dark)) !important;
+  border: 2px solid #fff !important;
+  border-radius: 12px;
+}
+.day-cell.search-highlight .num {
+  color: #ffffff !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+.day-cell.search-highlight .lunar {
+  color: rgba(255,255,255,0.9) !important;
+}
+.day-cell.search-highlight .shift-word {
+  background: #000000 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 5px rgba(255,255,255,0.5);
+}
+
+/* 弹窗 */
+.modal {
+  position: fixed; bottom: 0; left: 0; width: 100%; max-height: 75vh;
+  background: #1e1e1e; border-radius: 24px 24px 0 0; padding: 24px;
+  transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 200; overflow-y: auto;
+}
+.modal.active { transform: translateY(0); }
+.modal-mask {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8); opacity: 0; pointer-events: none;
+  transition: opacity 0.3s; z-index: 150;
+}
+.modal-mask.active { opacity: 1; pointer-events: auto; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.modal-header h2 { font-size: 18px; font-weight: normal; color: #bbb; }
+.modal-header .close-icon { font-size: 20px; color: #888; cursor: pointer; }
+
+.info-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 15px;
+}
+.info-row .label { color: #888; flex: none; }
+.info-row .value { color: #fff; font-weight: bold; text-align: right; }
+
+/* 进度条卡片 */
+.progress-card {
+  background: #28283c; border-radius: 16px; padding: 18px; margin-top: 20px;
+}
+.progress-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+}
+.progress-header .status { font-size: 16px; font-weight: bold; }
+.progress-header .remain { font-size: 13px; color: #aaa; }
+.progress-header .remain b { font-size: 18px; color: var(--primary); margin: 0 2px; }
+
+.progress-bar-bg {
+  height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;
+  margin-bottom: 8px;
+}
+.progress-bar-fill {
+  height: 100%; border-radius: 4px; transition: width 0.5s ease;
+}
+.progress-footer {
+  display: flex; justify-content: space-between; font-size: 11px; color: #777;
+}
+
+.modal-btn {
+  width: 100%; padding: 14px; background: var(--primary); border: none;
+  border-radius: 16px; color: #fff; font-size: 16px; margin-top: 24px; cursor: pointer;
+}
+
+/* 全年统计 */
+.year-summary {
+  margin: 4px 15px 30px; background: var(--card-bg);
+  border-radius: 16px; padding: 16px 10px;
+  display: flex; justify-content: space-around; text-align: center;
+}
+.year-summary .item .v { font-size: 20px; font-weight: bold; }
+.year-summary .item .k { font-size: 12px; color: var(--text-sub); margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>2026年排班日历</h1>
+  <div class="header-right">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="如: 10-01" maxlength="10">
+      <button class="search-btn" id="searchBtn">搜索</button>
+    </div>
+    <button class="back-btn" id="backBtn" onclick="scrollToToday()">今天</button>
+  </div>
+</div>
+
+<div class="legend" id="legend">
+  <span class="legend-bai"><i class="bai"></i>白班</span>
+  <span class="legend-ye"><i class="ye"></i>夜班</span>
+  <span class="legend-xiu"><i class="xiu"></i>休息</span>
+  <span class="legend-today-legend"><i class="today"></i>今天</span>
+</div>
+
+<div id="calendar"></div>
+
+<div class="year-summary" id="yearSummary"></div>
+
+<div class="modal-mask" id="modalMask" onclick="closeModal()"></div>
+<div class="modal" id="modal">
+  <div class="modal-header">
+    <h2 id="modalTitle"></h2>
+    <span class="close-icon" onclick="closeModal()">✕</span>
+  </div>
+  <div id="modalContent"></div>
+  <button class="modal-btn" onclick="closeModal()">关闭</button>
+</div>
+
+<script>
+/* ==================== 1. 农历数据 ==================== */
+const chineseDays = [
+  "初一","初二","初三","初四","初五","初六","初七","初八","初九","初十",
+  "十一","十二","十三","十四","十五","十六","十七","十八","十九","二十",
+  "廿一","廿二","廿三","廿四","廿五","廿六","廿七","廿八","廿九","三十"
+];
+
+const LUNAR_MONTHS = [
+  { name:"冬月", days:30, start:[2025,11,20] },
+  { name:"腊月", days:29, start:[2026,0,19] },
+  { name:"正月", days:30, start:[2026,1,17] },
+  { name:"二月", days:29, start:[2026,2,19] },
+  { name:"三月", days:30, start:[2026,3,17] },
+  { name:"四月", days:29, start:[2026,4,17] },
+  { name:"五月", days:30, start:[2026,5,15] },
+  { name:"六月", days:29, start:[2026,6,15] },
+  { name:"七月", days:30, start:[2026,7,13] },
+  { name:"八月", days:29, start:[2026,8,12] },
+  { name:"九月", days:30, start:[2026,9,11] },
+  { name:"十月", days:29, start:[2026,10,10] },
+  { name:"冬月", days:30, start:[2026,11,9] },
+  { name:"腊月", days:29, start:[2027,0,8] }
+];
+
+function getLunarDate(y, m, d, showFull = false) {
+  const target = new Date(y, m - 1, d);
+  target.setHours(0,0,0,0);
+  for (let i = LUNAR_MONTHS.length - 1; i >= 0; i--) {
+    const lm = LUNAR_MONTHS[i];
+    const start = new Date(lm.start[0], lm.start[1], lm.start[2]);
+    if (target >= start) {
+      const diff = Math.round((target - start) / 86400000);
+      if (diff < lm.days) {
+        const dayStr = chineseDays[diff];
+        return showFull ? `农历${lm.name}${dayStr}` : dayStr;
+      }
+    }
+  }
+  return "";
+}
+
+const solarTerms = {
+  "1-5":"小寒","1-20":"大寒","2-4":"立春","2-18":"雨水",
+  "3-5":"惊蛰","3-20":"春分","4-5":"清明","4-20":"谷雨",
+  "5-5":"立夏","5-21":"小满","6-5":"芒种","6-21":"夏至",
+  "7-7":"小暑","7-23":"大暑","8-7":"立秋","8-23":"处暑",
+  "9-7":"白露","9-23":"秋分","10-8":"寒露","10-23":"霜降",
+  "11-7":"立冬","11-22":"小雪","12-7":"大雪","12-22":"冬至"
+};
+
+/* ==================== 2. 排班计算 ==================== */
+const BASE_DATE = new Date(2026, 10, 12);
+const CYCLE = 56;
+
+function getShift(date) {
+  const d0 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const delta = Math.round((d0 - BASE_DATE) / 86400000);
+  const pos = ((delta % CYCLE) + CYCLE) % CYCLE;
+
+  let status = "休", currentDay = 0, totalDays = 0;
+  if (pos <= 13) { status = "白班"; currentDay = pos + 1; totalDays = 14; }
+  else if (pos <= 25) { status = "休"; currentDay = pos - 13; totalDays = 12; }
+  else if (pos <= 39) { status = "夜班"; currentDay = pos - 25; totalDays = 14; }
+  else { status = "休"; currentDay = pos - 39; totalDays = 16; }
+
+  return { status, currentDay, totalDays, remain: totalDays - currentDay + 1 };
+}
+
+/* ==================== 3. 渲染日历 ==================== */
+let todayEl = null;
+const WEEK_NAMES = ["日","一","二","三","四","五","六"];
+
+function renderCalendar() {
+  const container = document.getElementById("calendar");
+  container.innerHTML = "";
+  todayEl = null;
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  for (let m = 0; m < 12; m++) {
+    const monthWrapper = document.createElement("div");
+    monthWrapper.className = "month-wrapper";
+    monthWrapper.innerHTML = `<div class="month-title" id="month-${m}">${m + 1} 月</div>`;
+
+    const grid = document.createElement("div");
+    grid.className = "grid";
+
+    ["日","一","二","三","四","五","六"].forEach(w => {
+      grid.innerHTML += `<div class="weekday">${w}</div>`;
+    });
+
+    const firstDate = new Date(2026, m, 1);
+    const daysInMonth = new Date(2026, m + 1, 0).getDate();
+    for (let i = 0; i < firstDate.getDay(); i++) {
+      grid.innerHTML += `<div class="day-cell empty"></div>`;
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const curDate = new Date(2026, m, d);
+      curDate.setHours(0,0,0,0);
+      const isToday = curDate.getTime() === today.getTime();
+      const dateStr = `2026-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+
+      const shift = getShift(curDate);
+      let cellClass = "day-cell";
+      let shiftText = "";
+      let lunarText = "";
+
+      // 恢复正常的农历显示
+      if (solarTerms[`${m+1}-${d}`]) {
+        lunarText = `<span style="color:#f87171;">${solarTerms[`${m+1}-${d}`]}</span>`;
+      } else {
+        lunarText = getLunarDate(2026, m + 1, d, false);
+      }
+
+      if (shift.status === "白班") { cellClass += " cell-bai"; shiftText = "白"; }
+      else if (shift.status === "夜班") { cellClass += " cell-ye"; shiftText = "夜"; }
+      else { cellClass += " cell-xiu"; shiftText = "休"; }
+
+      if (isToday) cellClass += " is-today";
+
+      const cell = document.createElement("div");
+      cell.className = cellClass;
+      cell.id = `cell-${dateStr}`;
+      cell.dataset.date = dateStr;
+      
+      // 悬浮角标，不遮挡任何文字
+      const badge = isToday ? `<div class="today-badge">今天</div>` : '';
+
+      cell.innerHTML = `
+        ${badge}
+        <div class="num">${d}</div>
+        <div class="lunar">${lunarText}</div>
+        <div class="shift-word">${shiftText}</div>
+      `;
+      cell.onclick = () => openModal(dateStr, curDate, shift);
+      grid.appendChild(cell);
+
+      if (isToday) todayEl = cell;
+    }
+
+    monthWrapper.appendChild(grid);
+    container.appendChild(monthWrapper);
+  }
+
+  if (todayEl) {
+    document.getElementById("backBtn").style.display = "block";
+    setTimeout(() => {
+      todayEl.scrollIntoView({ behavior:"smooth", block:"center" });
+    }, 100);
+  }
+
+  renderYearSummary();
+}
+
+function scrollToToday() {
+  if (todayEl) todayEl.scrollIntoView({ behavior:"smooth", block:"center" });
+  clearSearchHighlights();
+}
+
+/* ==================== 4. 搜索功能 ==================== */
+function clearSearchHighlights() {
+  document.querySelectorAll(".search-highlight").forEach(el => el.classList.remove("search-highlight"));
+  document.querySelectorAll(".legend-highlight").forEach(el => el.classList.remove("legend-highlight"));
+}
+
+function performSearch() {
+  const input = document.getElementById("searchInput").value.trim();
+  if (!input) return;
+
+  let match = input.match(/(?:2026[-/]?)?(\d{1,2})[-/]?(\d{1,2})/);
+  if (!match) {
+    alert("格式不正确，请输入如 10-01 或 1001");
+    return;
+  }
+
+  let month = parseInt(match[1], 10);
+  let day = parseInt(match[2], 10);
+
+  if (month < 1 || month > 12) { alert("月份需在 1-12 之间"); return; }
+  const maxDays = new Date(2026, month, 0).getDate();
+  if (day < 1 || day > maxDays) { alert(`该月没有 ${day} 日`); return; }
+
+  const dateStr = `2026-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+  const targetCell = document.getElementById(`cell-${dateStr}`);
+  if (!targetCell) return;
+
+  clearSearchHighlights();
+
+  // 1. 高亮日期格子
+  targetCell.classList.add("search-highlight");
+
+  // 2. 高亮对应图例
+  const shift = getShift(new Date(2026, month - 1, day));
+  let legendClass = shift.status === "白班" ? ".legend-bai" : (shift.status === "夜班" ? ".legend-ye" : ".legend-xiu");
+  const legendEl = document.querySelector(legendClass);
+  if (legendEl) legendEl.classList.add("legend-highlight");
+
+  // 3. 智能滚动：定位到屏幕中央偏上
+  const yOffset = -120; 
+  const y = targetCell.getBoundingClientRect().top + window.pageYOffset + yOffset;
+  window.scrollTo({ top: y, behavior: "smooth" });
+}
+
+document.getElementById("searchBtn").addEventListener("click", performSearch);
+document.getElementById("searchInput").addEventListener("keypress", function(e) {
+  if (e.key === "Enter") performSearch();
+});
+
+/* ==================== 5. 全年统计 ==================== */
+function renderYearSummary() {
+  let bai = 0, ye = 0, xiu = 0;
+  for (let m = 0; m < 12; m++) {
+    const days = new Date(2026, m + 1, 0).getDate();
+    for (let d = 1; d <= days; d++) {
+      const s = getShift(new Date(2026, m, d));
+      if (s.status === "白班") bai++;
+      else if (s.status === "夜班") ye++;
+      else xiu++;
+    }
+  }
+  document.getElementById("yearSummary").innerHTML = `
+    <div class="item"><div class="v" style="color:#f39c12;">${bai}</div><div class="k">白班天数</div></div>
+    <div class="item"><div class="v" style="color:#3498db;">${ye}</div><div class="k">夜班天数</div></div>
+    <div class="item"><div class="v" style="color:#facc15;">${xiu}</div><div class="k">休息天数</div></div>
+  `;
+}
+
+/* ==================== 6. 弹窗与进度条 ==================== */
+function openModal(dateStr, dateObj, shift) {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const isToday = dateObj.getTime() === today.getTime();
+
+  document.getElementById("modalTitle").textContent = `${dateStr} 详情`;
+
+  const m = dateObj.getMonth() + 1;
+  const d = dateObj.getDate();
+  const lunarFull = getLunarDate(2026, m, d, true);
+  const term = solarTerms[`${m}-${d}`];
+  const lunarDisplay = term ? `${term} · ${lunarFull}` : lunarFull;
+
+  let content = "";
+  content += `<div class="info-row"><span class="label">排班状态</span><span class="value">${shift.status}</span></div>`;
+  content += `<div class="info-row"><span class="label">农历日期</span><span class="value">${lunarDisplay}</span></div>`;
+  content += `<div class="info-row"><span class="label">星期</span><span class="value">星期${WEEK_NAMES[dateObj.getDay()]}</span></div>`;
+
+  // 进度条计算
+  const percent = Math.min(100, Math.max(0, (shift.currentDay / shift.totalDays) * 100));
+  let color = "#facc15";
+  if (shift.status === "白班") color = "#4a90e2";
+  else if (shift.status === "夜班") color = "#3498db";
+
+  content += `
+    <div class="progress-card">
+      <div class="progress-header">
+        <span class="status" style="color:${color}">${shift.status}</span>
+        <span class="remain">剩余 <b>${shift.remain}</b> 天</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" style="width:${percent}%; background:${color};"></div>
+      </div>
+      <div class="progress-footer">
+        <span>第 ${shift.currentDay} 天</span>
+        <span>共 ${shift.totalDays} 天</span>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("modalContent").innerHTML = content;
+  document.getElementById("modal").classList.add("active");
+  document.getElementById("modalMask").classList.add("active");
+  document.body.classList.add("modal-open");
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.remove("active");
+  document.getElementById("modalMask").classList.remove("active");
+  document.body.classList.remove("modal-open");
+}
+
+/* ==================== 启动 ==================== */
+renderCalendar();
+</script>
+</body>
+</html>
